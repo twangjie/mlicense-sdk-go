@@ -22,7 +22,7 @@ import (
 
 func main() {
     client, err := mlicense.NewClient(mlicense.Config{
-        ProductID:    "mcvr",
+        ProductID:    "demo",
         PublicKeyPEM: `-----BEGIN PUBLIC KEY-----\n...`,
         LicensePath:  "./lic.dat",
     })
@@ -65,7 +65,7 @@ SDK 集成者（产品方）根据自身产品的复杂度，**选择一种**授
 
 ```go
 client, _ := mlicense.NewClient(mlicense.Config{
-    ProductID:    "mcvr",
+    ProductID:    "demo",
     PublicKeyPEM: pubKey,
 })
 
@@ -93,7 +93,7 @@ client.CheckLimit("max_streams", 999) // nil
 
 ```go
 client, _ := mlicense.NewClient(mlicense.Config{
-    ProductID:    "mcvr",
+    ProductID:    "demo",
     PublicKeyPEM: pubKey,
     LicensePath:  "./lic.dat",
 })
@@ -165,7 +165,7 @@ type Config struct {
 编译时添加 `nolicense` build tag 跳过所有授权检查：
 
 ```bash
-go build -tags nolicense -o mcvr .
+go build -tags nolicense -o demo .
 ```
 
 ## 硬件指纹
