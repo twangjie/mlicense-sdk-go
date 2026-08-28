@@ -153,11 +153,41 @@ if err != nil {
 
 ```go
 type Config struct {
-    ProductID    string            // 产品 ID（必填）
-    PublicKeyPEM string            // 公钥 PEM（必填）
+    ProductID    string            // 产品可读标识（Slug，如 "demo"）（必填，除非密钥包包含）
+    PublicKeyPEM string            // 公钥 PEM（必填，除非使用密钥包）
     LicensePath  string            // 授权文件路径，默认 "./lic.dat"
-    ExtraKeys    map[string]string // 额外 kid→公钥 映射（兼容旧密钥）
+    ExtraKeys    map[string]string // 额外 kid→公钥 PEM 映射（密钥轮换后保留旧公钥验证旧 License）
+
+    // 离线密钥包（可选，替代逐一配置 PublicKeyPEM/ExtraKeys）
+    KeyBundle     string            // 内嵌密钥包 JSON 字符串
+    KeyBundlePath string            // 密钥包文件路径
 }
+```
+
+> **说明**：密钥包由 mlicense 管理后台（产品管理页 → 导出密钥包）或 `mlicense-cli keys export` 生成，格式含 `product_id`（Slug）、`public_key`、`kid`，**只含公钥、不含私钥**，可安全内嵌/分发给集成者。
+> 若同时提供 `PublicKeyPEM` 与密钥包，`PublicKeyPEM` 作为主密钥，密钥包公钥作为附加密钥合并；`ProductID` 为空时回退使用密钥包中的 `product_id`。
+> 面向集成者的密钥包完整使用说明见 [`server/doc/integrator-guide.md`](../../server/doc/integrator-guide.md)。
+
+```go
+// 方式一：直接配置（内嵌公钥）
+client, _ := mlicense.NewClient(mlicense.Config{
+    ProductID:    "demo",
+    PublicKeyPEM: "-----BEGIN PUBLIC KEY-----...",
+    LicensePath:  "/etc/demo/license.dat",
+})
+
+// 方式二：加载离线密钥包
+client, _ := mlicense.NewClient(mlicense.Config{
+    LicensePath:  "/etc/demo/license.dat",
+    KeyBundlePath: "/etc/demo/demo-keys.json",
+})
+
+// 方式三：内嵌密钥包 JSON 字符串
+client, _ := mlicense.NewClient(mlicense.Config{
+    ProductID:    "demo",
+    LicensePath:  "/etc/demo/license.dat",
+    KeyBundleJSON: `{"product_id": "demo", "keys": [{"kid": "", "public_key": "-----BEGIN PUBLIC KEY-----..."}]}`,
+})
 ```
 
 ## nolicense 模式

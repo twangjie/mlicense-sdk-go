@@ -1,3 +1,5 @@
+//go:build !nolicense
+
 package mlicense
 
 import "fmt"

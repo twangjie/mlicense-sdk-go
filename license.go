@@ -1,3 +1,5 @@
+//go:build !nolicense
+
 package mlicense
 
 import (
@@ -29,7 +31,7 @@ func (c *Client) saveToken(token string) error {
 }
 
 func (c *Client) ImportLicense(token string) error {
-	payload, _, err := DecodeToken(token)
+	payload, kid, err := DecodeToken(token)
 	if err != nil {
 		return fmt.Errorf("invalid token: %w", err)
 	}
@@ -48,10 +50,7 @@ func (c *Client) ImportLicense(token string) error {
 		return fmt.Errorf("failed to decode signature: %w", err)
 	}
 
-	pubKey, err := crypto.LoadPublicKey(c.config.PublicKeyPEM)
-	if err != nil {
-		return fmt.Errorf("failed to load public key: %w", err)
-	}
+	pubKey := c.resolvePublicKey(kid)
 
 	claims := buildCanonicalClaims(payload, payload.Fingerprint, "")
 	if !crypto.Verify(pubKey, claims, sigBytes) {

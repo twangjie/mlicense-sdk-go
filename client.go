@@ -1,3 +1,5 @@
+//go:build !nolicense
+
 package mlicense
 
 import (
@@ -12,35 +14,59 @@ import (
 )
 
 type Client struct {
-	config        Config
-	publicKey     *ecdsa.PublicKey
-	license       *TokenPayload
-	rawToken      string
-	hwInfo        *hardware.HardwareInfo
+	config   Config
+	keys     map[string]*ecdsa.PublicKey
+	primary  *ecdsa.PublicKey
+	license  *TokenPayload
+	rawToken string
+	hwInfo   *hardware.HardwareInfo
 	challengeCode string
 	activated     bool
 }
 
 func NewClient(cfg Config) (*Client, error) {
-	if cfg.ProductID == "" {
-		return nil, fmt.Errorf("product_id is required")
-	}
-	if cfg.PublicKeyPEM == "" {
-		return nil, fmt.Errorf("public_key is required")
-	}
 	if cfg.LicensePath == "" {
 		cfg.LicensePath = "./lic.dat"
 	}
 
-	pubKey, err := crypto.LoadPublicKey(cfg.PublicKeyPEM)
+	if err := cfg.applyKeyBundle(); err != nil {
+		return nil, err
+	}
+
+	if cfg.ProductID == "" {
+		return nil, fmt.Errorf("product_id is required (or provide a key bundle containing it)")
+	}
+
+	if cfg.PublicKeyPEM == "" {
+		return nil, fmt.Errorf("public_key is required (or provide a key bundle)")
+	}
+
+	keys, err := loadPublicKeys(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load public key: %w", err)
+		return nil, err
+	}
+
+	primary, err := crypto.LoadPublicKey(cfg.PublicKeyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load primary public key: %w", err)
 	}
 
 	return &Client{
-		config:    cfg,
-		publicKey: pubKey,
+		config:  cfg,
+		keys:    keys,
+		primary: primary,
 	}, nil
+}
+
+// resolvePublicKey returns the public key for the given kid. It falls back to
+// the primary key when the kid is unknown or empty.
+func (c *Client) resolvePublicKey(kid string) *ecdsa.PublicKey {
+	if kid != "" {
+		if pk, ok := c.keys[kid]; ok {
+			return pk
+		}
+	}
+	return c.primary
 }
 
 func (c *Client) Verify() error {
@@ -80,7 +106,8 @@ func (c *Client) Verify() error {
 	}
 
 	claims := buildCanonicalClaims(payload, payload.Fingerprint, "")
-	if !crypto.Verify(c.publicKey, claims, sigBytes) {
+	pubKey := c.resolvePublicKey(kid)
+	if !crypto.Verify(pubKey, claims, sigBytes) {
 		return fmt.Errorf("signature verification failed")
 	}
 
@@ -101,7 +128,6 @@ func (c *Client) Verify() error {
 		return fmt.Errorf("license not yet valid until %s", payload.NotBefore)
 	}
 
-	_ = kid
 	c.license = payload
 	c.rawToken = token
 	return nil
@@ -233,4 +259,31 @@ func joinSorted(items []string) string {
 		}
 	}
 	return strings.Join(sorted, ",")
+}
+
+// loadPublicKeys builds a kid -> public key map from the configuration's
+// primary key and ExtraKeys.
+func loadPublicKeys(cfg Config) (map[string]*ecdsa.PublicKey, error) {
+	keys := make(map[string]*ecdsa.PublicKey)
+
+	if cfg.PublicKeyPEM != "" {
+		pk, err := crypto.LoadPublicKey(cfg.PublicKeyPEM)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load primary public key: %w", err)
+		}
+		keys["__primary__"] = pk
+	}
+
+	for kid, pem := range cfg.ExtraKeys {
+		if strings.TrimSpace(pem) == "" {
+			continue
+		}
+		pk, err := crypto.LoadPublicKey(pem)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load public key for kid %q: %w", kid, err)
+		}
+		keys[kid] = pk
+	}
+
+	return keys, nil
 }
