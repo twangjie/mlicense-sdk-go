@@ -56,7 +56,13 @@ const (
 )
 
 // qrTTL is how long the device-side QR stays valid (for backend expiry check).
-const qrTTL = 10 * time.Minute
+//
+// A generous TTL is used so an offline QR can be sent via email / IM and be
+// processed by an admin in batch, which routinely exceeds a few minutes. The
+// expiry only serves as a soft, administrative notice on the backend scan side;
+// the real authorization is the challenge+response HMAC computed against the
+// device fingerprint at activation time.
+const qrTTL = 7 * 24 * time.Hour
 
 // GenerateQR builds an offline-activation request QR payload from the local
 // hardware fingerprint and returns it as a data URI that can be rendered as a

@@ -76,11 +76,12 @@ func (c *Client) ActivateByResponse(responseCode string, fingerprint string) err
 // createActivationToken creates a minimal activation token for simple challenge-response flow.
 // This token represents successful response-code activation and is saved to lic.dat for persistence.
 // It does not carry features/limits/expiry - it only proves the device was activated via response code.
+// The LicenseID records the response code so it can be identified in the local authorization file.
 func (c *Client) createActivationToken(responseCode string, fingerprint string) string {
 	payload := TokenPayload{
 		Issuer:      "mlicense-server",
 		ProductID:   c.config.ProductID,
-		LicenseID:   "challenge-response",
+		LicenseID:   responseCode,
 		Subject:     "device",
 		Type:        "challenge-response",
 		Fingerprint: fingerprint,
@@ -91,7 +92,8 @@ func (c *Client) createActivationToken(responseCode string, fingerprint string) 
 		NotBefore:   time.Now().UTC().Format(time.RFC3339),
 	}
 
-	// Create unsigned token (kid.payload without signature) - the HMAC verification already proved authenticity
+	// Create unsigned token (kid.payload without signature) - the HMAC verification already proved authenticity.
+	// The kid stays "challenge-response" so Verify() can recognize this simple activation token type.
 	kid := "challenge-response"
 	payloadJSON, _ := json.Marshal(payload)
 	compressed := new(bytes.Buffer)
