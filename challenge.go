@@ -3,6 +3,9 @@
 package mlicense
 
 import (
+	"bytes"
+	"compress/gzip"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -43,8 +46,9 @@ func (c *Client) GenerateChallengeCode() (string, error) {
 // ActivateByResponse performs simple challenge-based authorization for clients
 // that do not need dedicated feature/limit management.
 //
-// It verifies the response code (with empty features/limits) against the device
-// fingerprint; on success the client is marked as activated in memory.
+// It verifies the response code against the device fingerprint; on success the
+// client is marked as activated in memory and a minimal activation token is
+// written to the license file for persistence across restarts.
 func (c *Client) ActivateByResponse(responseCode string, fingerprint string) error {
 	if c.challengeCode == "" {
 		return ErrNoChallengeCode
@@ -54,11 +58,14 @@ func (c *Client) ActivateByResponse(responseCode string, fingerprint string) err
 	}
 
 	key := c.hmacKey()
-	if !crypto.VerifyResponseCode(
-		key, c.challengeCode, fingerprint,
-		crypto.HashFeatures(nil), crypto.HashLimits(nil), responseCode,
-	) {
+	if !crypto.VerifyResponseCode(key, c.challengeCode, fingerprint, responseCode) {
 		return ErrInvalidResponseCode
+	}
+
+	// Create a minimal activation token for persistence
+	token := c.createActivationToken(responseCode, fingerprint)
+	if err := c.saveToken(token); err != nil {
+		return fmt.Errorf("failed to save activation: %w", err)
 	}
 
 	c.challengeCode = ""
@@ -66,12 +73,42 @@ func (c *Client) ActivateByResponse(responseCode string, fingerprint string) err
 	return nil
 }
 
+// createActivationToken creates a minimal activation token for simple challenge-response flow.
+// This token represents successful response-code activation and is saved to lic.dat for persistence.
+// It does not carry features/limits/expiry - it only proves the device was activated via response code.
+func (c *Client) createActivationToken(responseCode string, fingerprint string) string {
+	payload := TokenPayload{
+		Issuer:      "mlicense-server",
+		ProductID:   c.config.ProductID,
+		LicenseID:   "challenge-response",
+		Subject:     "device",
+		Type:        "challenge-response",
+		Fingerprint: fingerprint,
+		Features:    []string{},
+		Limits:      map[string]int{},
+		IssuedAt:    time.Now().UTC().Format(time.RFC3339),
+		ExpireAt:    time.Now().Add(365 * 24 * time.Hour).UTC().Format(time.RFC3339), // long expiry
+		NotBefore:   time.Now().UTC().Format(time.RFC3339),
+	}
+
+	// Create unsigned token (kid.payload without signature) - the HMAC verification already proved authenticity
+	kid := "challenge-response"
+	payloadJSON, _ := json.Marshal(payload)
+	compressed := new(bytes.Buffer)
+	gw := gzip.NewWriter(compressed)
+	gw.Write(payloadJSON)
+	gw.Close()
+	payloadEncoded := crypto.Base64URLEncode(compressed.Bytes())
+	return kid + "." + payloadEncoded
+}
+
 // ActivateByResponseWithToken verifies the response code against a license token
 // and, on success, writes the license token to the license file.
 //
 // The license token (issued by the mlicense server for the device) carries the
 // full authorization: fingerprint, features, limits and expiry. Features and
-// limits are derived from the token, not passed in.
+// limits are derived from the token, not from the response code; the response
+// code only authorizes the device (challenge + fingerprint).
 func (c *Client) ActivateByResponseWithToken(responseCode string, licenseToken string, fingerprint string) error {
 	if c.challengeCode == "" {
 		return ErrNoChallengeCode
@@ -90,10 +127,7 @@ func (c *Client) ActivateByResponseWithToken(responseCode string, licenseToken s
 	}
 
 	key := c.hmacKey()
-	if !crypto.VerifyResponseCode(
-		key, c.challengeCode, fingerprint,
-		crypto.HashFeatures(payload.Features), crypto.HashLimits(payload.Limits), responseCode,
-	) {
+	if !crypto.VerifyResponseCode(key, c.challengeCode, fingerprint, responseCode) {
 		return ErrInvalidResponseCode
 	}
 

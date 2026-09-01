@@ -4,13 +4,49 @@ package hardware
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
 
+// findCmd resolves an external Windows command to an absolute path, so the
+// hardware collector does not depend on the process PATH containing the system
+// directory (which some service hosts strip or set to a literal "%PATH%").
+// It prefers exec.LookPath and falls back to %SystemRoot%\System32 (and
+// Sysnative for WOW64) where reg.exe/netsh.exe/getmac.exe live.
+func findCmd(name string) string {
+	if p, err := exec.LookPath(name); err == nil {
+		return p
+	}
+
+	systemRoot := os.Getenv("SystemRoot")
+	if systemRoot == "" {
+		systemRoot = `C:\Windows`
+	}
+
+	// The external commands (reg/netsh/getmac) are Windows executables; append
+	// the .exe extension when resolving against the system directory.
+	exe := name
+	if !strings.HasSuffix(strings.ToLower(exe), ".exe") {
+		exe += ".exe"
+	}
+
+	candidates := []string{
+		filepath.Join(systemRoot, "System32", exe),
+		filepath.Join(systemRoot, "Sysnative", exe),
+	}
+	for _, c := range candidates {
+		if fi, err := os.Stat(c); err == nil && !fi.IsDir() {
+			return c
+		}
+	}
+	return name
+}
+
 func getMachineID() (string, error) {
-	out, err := exec.Command("reg", "query",
+	out, err := exec.Command(findCmd("reg"), "query",
 		`HKLM\SOFTWARE\Microsoft\Cryptography`,
 		"/v", "MachineGuid").Output()
 	if err != nil {
@@ -26,7 +62,10 @@ func getMachineID() (string, error) {
 }
 
 func getPhysicalMACs() ([]string, error) {
-	out, err := exec.Command("netsh", "interface", "show", "interface").Output()
+	netsh := findCmd("netsh")
+	getmac := findCmd("getmac")
+
+	out, err := exec.Command(netsh, "interface", "show", "interface").Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list interfaces: %w", err)
 	}
@@ -43,7 +82,7 @@ func getPhysicalMACs() ([]string, error) {
 		}
 	}
 
-虚拟接口 := regexp.MustCompile(`(?i)(isatap|teredo|loopback|pseudo|virtual|docker|vmware|virtualbox|hamachi)`)
+	虚拟接口 := regexp.MustCompile(`(?i)(isatap|teredo|loopback|pseudo|virtual|docker|vmware|virtualbox|hamachi)`)
 
 	var macs []string
 	for _, iface := range ifaces {
@@ -51,7 +90,7 @@ func getPhysicalMACs() ([]string, error) {
 			continue
 		}
 
-		out, err := exec.Command("getmac", "/fo", "csv", "/nh").Output()
+		out, err := exec.Command(getmac, "/fo", "csv", "/nh").Output()
 		if err != nil {
 			continue
 		}
@@ -77,7 +116,7 @@ func getPhysicalMACs() ([]string, error) {
 	}
 
 	if len(macs) == 0 {
-		out, err := exec.Command("getmac", "/fo", "csv", "/nh").Output()
+		out, err := exec.Command(getmac, "/fo", "csv", "/nh").Output()
 		if err == nil {
 			seen := make(map[string]bool)
 			for _, line := range strings.Split(string(out), "\n") {

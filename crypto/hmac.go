@@ -25,9 +25,13 @@ func GenerateChallengeCode(key []byte, fingerprint string, timestamp int64, nonc
 	return fmt.Sprintf("%06d", code)
 }
 
-func GenerateResponseCode(key []byte, challengeCode string, fingerprint string, featuresHash string, limitsHash string) string {
+// GenerateResponseCode generates a 6-8 digit numeric response code.
+// The response code authenticates the DEVICE (challenge + fingerprint) and is
+// deliberately not bound to features/limits, which are carried and verified
+// independently by the license file when present.
+func GenerateResponseCode(key []byte, challengeCode string, fingerprint string) string {
 	mac := hmac.New(sha256.New, key)
-	mac.Write([]byte(fmt.Sprintf("%s|%s|%s|%s", challengeCode, fingerprint, featuresHash, limitsHash)))
+	mac.Write([]byte(fmt.Sprintf("%s|%s", challengeCode, fingerprint)))
 	sum := mac.Sum(nil)
 
 	val := uint64(sum[0])<<24 | uint64(sum[1])<<16 | uint64(sum[2])<<8 | uint64(sum[3])
@@ -35,8 +39,8 @@ func GenerateResponseCode(key []byte, challengeCode string, fingerprint string, 
 	return fmt.Sprintf("%08d", code)
 }
 
-func VerifyResponseCode(key []byte, challengeCode string, fingerprint string, featuresHash string, limitsHash string, providedCode string) bool {
-	expected := GenerateResponseCode(key, challengeCode, fingerprint, featuresHash, limitsHash)
+func VerifyResponseCode(key []byte, challengeCode string, fingerprint string, providedCode string) bool {
+	expected := GenerateResponseCode(key, challengeCode, fingerprint)
 	return hmac.Equal([]byte(expected), []byte(providedCode))
 }
 

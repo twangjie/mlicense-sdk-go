@@ -52,8 +52,8 @@ func demoChallengeSimple() error {
 	fp := client.GetFingerprint()
 	fmt.Printf("  1. 挑战码: %s\n  2. 指纹:   %s\n", code, fp)
 
-	// 2. 模拟管理员在后台生成应答码（简单场景，空 feature/limit）
-	responseCode := simulateServerResponseCode(code, fp, nil, nil)
+	// 2. 模拟管理员在后台生成应答码（仅绑定 挑战码+指纹）
+	responseCode := simulateServerResponseCode(code, fp)
 	fmt.Printf("  3. 管理后台应答码: %s\n", responseCode)
 
 	// 3. 设备验证
@@ -92,8 +92,8 @@ func demoChallengeWithToken() error {
 	features := []string{"gb28181_access", "onvif_access"}
 	limits := map[string]int{"max_streams": 10}
 
-	// 2. 管理员后台：据此挑战码/指纹/功能/限制 生成应答码 + 完整授权文件
-	responseCode := simulateServerResponseCode(code, fp, features, limits)
+	// 2. 管理员后台：应答码（设备授权，不绑定功能/限制）+ 完整授权文件（携带功能/限制）
+	responseCode := simulateServerResponseCode(code, fp)
 	token := simulateServerLicenseToken(features, limits, fp)
 	fmt.Printf("  2. 应答码: %s\n  3. 授权文件 token: %s...\n", responseCode, token[:40])
 

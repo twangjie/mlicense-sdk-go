@@ -80,35 +80,56 @@ func (c *Client) Verify() error {
 		return fmt.Errorf("failed to decode token: %w", err)
 	}
 
-	parts := strings.SplitN(token, ".", 3)
-	if len(parts) != 3 {
-		return fmt.Errorf("invalid token format: expected 3 parts")
-	}
+	parts := strings.Split(token, ".")
+	isChallengeResponse := (len(parts) == 2 && parts[0] == "challenge-response")
 
-	sigBytes, err := crypto.Base64URLDecode(parts[2])
-	if err != nil {
-		return fmt.Errorf("failed to decode signature: %w", err)
-	}
+	if !isChallengeResponse {
+		// Full license token with ECDSA signature
+		if len(parts) != 3 {
+			return fmt.Errorf("invalid token format: expected 3 parts")
+		}
 
-	salt, err := c.getSalt()
-	if err != nil {
-		return fmt.Errorf("failed to get salt: %w", err)
-	}
+		sigBytes, err := crypto.Base64URLDecode(parts[2])
+		if err != nil {
+			return fmt.Errorf("failed to decode signature: %w", err)
+		}
 
-	hwInfo, err := hardware.Collect(salt)
-	if err != nil {
-		return fmt.Errorf("failed to collect hardware info: %w", err)
-	}
-	c.hwInfo = hwInfo
+		salt, err := c.getSalt()
+		if err != nil {
+			return fmt.Errorf("failed to get salt: %w", err)
+		}
 
-	if payload.Fingerprint != "" && payload.Fingerprint != hwInfo.Fingerprint {
-		return fmt.Errorf("hardware fingerprint mismatch")
-	}
+		hwInfo, err := hardware.Collect(salt)
+		if err != nil {
+			return fmt.Errorf("failed to collect hardware info: %w", err)
+		}
+		c.hwInfo = hwInfo
 
-	claims := buildCanonicalClaims(payload, payload.Fingerprint, "")
-	pubKey := c.resolvePublicKey(kid)
-	if !crypto.Verify(pubKey, claims, sigBytes) {
-		return fmt.Errorf("signature verification failed")
+		if payload.Fingerprint != "" && payload.Fingerprint != hwInfo.Fingerprint {
+			return fmt.Errorf("hardware fingerprint mismatch")
+		}
+
+		claims := buildCanonicalClaims(payload, payload.Fingerprint, "")
+		pubKey := c.resolvePublicKey(kid)
+		if !crypto.Verify(pubKey, claims, sigBytes) {
+			return fmt.Errorf("signature verification failed")
+		}
+	} else {
+		// Challenge-response token: verify fingerprint and expiry (HMAC already verified during activation)
+		salt, err := c.getSalt()
+		if err != nil {
+			return fmt.Errorf("failed to get salt: %w", err)
+		}
+
+		hwInfo, err := hardware.Collect(salt)
+		if err != nil {
+			return fmt.Errorf("failed to collect hardware info: %w", err)
+		}
+		c.hwInfo = hwInfo
+
+		if payload.Fingerprint != "" && payload.Fingerprint != hwInfo.Fingerprint {
+			return fmt.Errorf("hardware fingerprint mismatch")
+		}
 	}
 
 	now := time.Now().UTC()

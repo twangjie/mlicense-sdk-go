@@ -72,3 +72,7 @@ func (c *Client) IsActivated() bool {
 func (c *Client) ImportLicense(token string) error {
 	return nil
 }
+
+func (c *Client) GenerateQR() (string, error) {
+	return "", nil
+}

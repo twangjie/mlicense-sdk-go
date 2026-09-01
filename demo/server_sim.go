@@ -12,17 +12,12 @@ import (
 	"github.com/twangjie/mlicense-sdk-go/crypto"
 )
 
-// simulateServerResponseCode 模拟 mlicense 管理后台根据 挑战码+指纹+功能/限制 生成应答码。
+// simulateServerResponseCode 模拟 mlicense 管理后台生成应答码。
+// 应答码仅绑定 挑战码+指纹（设备授权），不绑定功能/限制；功能/限制由授权文件独立携带与校验。
 // 为与 SDK 一致，此处用公钥派生 HMAC key（SDK 只持有公钥）。
-func simulateServerResponseCode(challengeCode string, fingerprint string, features []string, limits map[string]int) string {
+func simulateServerResponseCode(challengeCode string, fingerprint string) string {
 	key := crypto.HMACKey(productID, publicKeyPEM)
-	return crypto.GenerateResponseCode(
-		key,
-		challengeCode,
-		fingerprint,
-		crypto.HashFeatures(features),
-		crypto.HashLimits(limits),
-	)
+	return crypto.GenerateResponseCode(key, challengeCode, fingerprint)
 }
 
 // simulateServerLicenseToken 模拟 mlicense 后台为设备签发的完整授权文件 token。
